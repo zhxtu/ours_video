@@ -1,0 +1,105 @@
+{
+    "name": "CAC",
+    "experim_name": "thermalour_cac_deeplabv3+_resnet101_1over8_supervised",
+    "dataset": "thermalour",
+    "data_dir": "/hdd2/zy/Dataset/ThermalData",
+    "datalist": 0,
+    "n_gpu": 2,
+    "n_labeled_examples": 1374,
+    "n_unlabeled_ratio": 8,
+    "diff_lrs": true,
+    "ramp_up": 0.01,
+    "unsupervised_w": 30,
+    "ignore_index": 255,
+    "lr_scheduler": "Poly",
+    "use_weak_lables":false,
+    "weakly_loss_w": 0.4,
+    "pretrained": true,
+    "random_seed": 42,
+
+    "model":{
+        "supervised": true,
+        "semi": false,
+        "supervised_w": 1,
+
+        "sup_loss": "CE",
+
+        "layers": 101,
+        "downsample": true,
+        "proj_final_dim": 128,
+        "out_dim": 256,
+        "backbone": "deeplab_v3+",
+        "pos_thresh_value": 0.75,
+        "weight_unsup": 0.1,
+        "epoch_start_unsup": 20,
+        "selected_num": 6400,
+        "temp": 0.1,
+        "step_save": 2,
+        "stride": 8
+    },
+
+
+    "optimizer": {
+        "type": "SGD",
+        "args":{
+            "lr": 0.1,
+            "weight_decay": 1e-4,
+            "momentum": 0.9
+        }
+    },
+
+    "train_supervised": {
+        "batch_size": 8,
+        "crop_size": 320,
+        "shuffle": true,
+        "base_size": 720,
+        "scale": true,
+        "augment": true,
+        "flip": true,
+        "rotate": false,
+        "blur": false,
+        "split": "train_supervised",
+        "num_workers": 2,
+        "jitter": true
+    },
+
+    "train_unsupervised": {
+        "batch_size": 4,
+        "crop_size": 320,
+        "shuffle": true,
+        "base_size": 720,
+        "scale": true,
+        "augment": true,
+        "flip": true,
+        "rotate": false,
+        "blur": false,
+        "split": "train_unsupervised",
+        "num_workers": 2,
+        "iou_bound": [0.1, 1.0],
+        "stride": 8
+    },
+
+    "val_loader": {
+        "batch_size": 2,
+        "val": true,
+        "split": "val",
+        "shuffle": false,
+        "num_workers": 1
+    },
+
+    "trainer": {
+        "epochs": 200,
+        "save_dir": "runs/",
+        "save_period": 1,
+  
+        "monitor": "max Mean_IoU",
+        "early_stop": 100,
+        
+        "tensorboardX": true,
+        "log_dir": "runs/",
+        "log_per_iter": 20,
+
+        "val": true,
+        "val_per_epochs": 1
+    }
+}
