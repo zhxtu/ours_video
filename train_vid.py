@@ -5,7 +5,7 @@ import json
 import argparse
 import torch
 import dataloaders
-import models
+from models.model_reco import VCL
 import math
 import copy
 from utils import Logger
@@ -107,7 +107,7 @@ def main(gpu, ngpus_per_node, config, resume, test):
     test_loader = sup_dataloader(config['test_loader'])
 
     sup_loss = CE_loss
-    model = models.VCL(num_classes=val_loader.dataset.num_classes, conf=config['model'],
+    model = VCL(num_classes=val_loader.dataset.num_classes, conf=config['model'],
                        sup_loss=sup_loss, ignore_index=val_loader.dataset.ignore_index)
     if gpu == 0:
         print(f'\n{model}\n')
@@ -150,7 +150,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--config', default='configs/thermalvid_cac_deeplabv3+_resnet50_1over4_datalist0.json',
                         type=str,
                         help='Path to the config file')
-    parser.add_argument('-r', '--resume', default='/home/zhengyu/ours_video/runs/thermalvid_cac_deeplabv3+_resnet50_1over4_datalist0/01-19_16-29/best_model.pth', type=str,
+    parser.add_argument('-r', '--resume', default='/home/zhengyu/ours_video/runs/thermalvid_cac_deeplabv3+_resnet50_1over4_datalist0/03-31_10-22/checkpoint.pth', type=str,
                         help='Path to the .pth model checkpoint to resume training')
     parser.add_argument('-t', '--test', default=False, type=bool,
                         help='whether to test')

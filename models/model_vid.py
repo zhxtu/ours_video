@@ -457,8 +457,17 @@ class VCL(BaseModel):
             total_loss = total_loss + loss_inter
             # if epoch < self.epoch_start_inter:
             return total_loss, curr_losses, outputs
+
+
+
+
+
+
         else:
             raise ValueError("No such mode {}".format(self.mode))
+
+
+
 
     def _contrastive(self, X_anchor, y_anchor, queue=None):
         anchor_num, n_view = X_anchor.shape[0], X_anchor.shape[1]  # 22*46*256  anchor_num:batch中所有class的个数， n_view:每个class中sample的个数

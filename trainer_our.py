@@ -13,7 +13,7 @@ from tqdm import tqdm
 from PIL import Image
 from utils.helpers import DeNormalize
 import torch.distributed as dist
-
+from models.module_list_reco import *
 class TrainerOur(BaseTrainer):
     def __init__(self, model, resume, config, supervised_loader, unsupervised_loader, iter_per_epoch,
                 val_loader=None, test_loader=None, train_logger=None, test_logger=None, gpu=None, gt_loader=None, test=False):
@@ -30,7 +30,7 @@ class TrainerOur(BaseTrainer):
         self.log_step = config['trainer'].get('log_per_iter', int(np.sqrt(self.val_loader.batch_size)))
         if config['trainer']['log_per_iter']:
             self.log_step = int(self.log_step / self.val_loader.batch_size) + 1
-
+        # self.ema = EMA(model, 0.99)  # Mean teacher model
         self.num_classes = self.val_loader.dataset.num_classes
         self.mode = self.model.module.mode
 
