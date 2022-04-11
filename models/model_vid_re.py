@@ -269,6 +269,8 @@ class VCL(BaseModel):
 
                 logits1_up = self.classifier(enc_ul1_up)  # [batch_size, num_classes, h, w]
                 logits2_up = self.classifier(enc_ul2_up)
+                pseudo_logits1_up = F.softmax(logits1_up, 1).max(1)[0].detach() #[batch_size, h, w]
+                pseudo_logits2_up = F.softmax(logits2_up, 1).max(1)[0].detach()
                 pseudo_label1_up = logits1_up.max(1)[1].detach()  # [batch_size, h, w]
                 pseudo_label2_up = logits2_up.max(1)[1].detach()
 
@@ -281,6 +283,8 @@ class VCL(BaseModel):
             pseudo_logits_list2 = []
             enc_feature_list1_up = []
             enc_feature_list2_up = []
+            pseudo_logits_list1_up = []
+            pseudo_logits_list2_up = []
             pseudo_label_list1_up = []
             pseudo_label_list2_up = []
             for idx in range(x_ul1.size(0)):
@@ -294,20 +298,22 @@ class VCL(BaseModel):
                 # pseudo_logits_2_idx = pseudo_logits_2[idx]
                 pseudo_label1_idx_up = pseudo_label1_up[idx]
                 pseudo_label2_idx_up = pseudo_label2_up[idx]
+                pseudo_logits_1_idx_up = pseudo_logits1_up[idx]
+                pseudo_logits_2_idx_up = pseudo_logits2_up[idx]
                 if flip[0][idx] == True:
                     # output_ul1_idx = torch.flip(output_ul1_idx, dims=(2,))
                     enc_ul1_idx_up = torch.flip(enc_ul1_idx_up, dims=(2,))
                     # pseudo_label1_idx = torch.flip(pseudo_label1_idx, dims=(1,))
                     # pseudo_logits_1_idx = torch.flip(pseudo_logits_1_idx, dims=(1,))
                     pseudo_label1_idx_up = torch.flip(pseudo_label1_idx_up, dims=(1,))
-
+                    pseudo_logits_1_idx_up = torch.flip(pseudo_logits_1_idx_up, dims=(1,))
                 if flip[1][idx] == True:
                     # output_ul2_idx = torch.flip(output_ul2_idx, dims=(2,))
                     enc_ul2_idx_up = torch.flip(enc_ul2_idx_up, dims=(2,))
                     # pseudo_label2_idx = torch.flip(pseudo_label2_idx, dims=(1,))
                     # pseudo_logits_2_idx = torch.flip(pseudo_logits_2_idx, dims=(1,))
                     pseudo_label2_idx_up = torch.flip(pseudo_label2_idx_up, dims=(1,))
-
+                    pseudo_logits_2_idx_up = torch.flip(pseudo_logits_2_idx_up, dims=(1,))
                 # 因为原图320，特征缩小了8倍，80×80，所以对应的原图空间特征也要/8
                 ul1_t, br1_t, ul2_t, br2_t = torch.stack(ul1, 0), torch.stack(br1, 0), torch.stack(ul2, 0), torch.stack(br2, 0)
                 ul1_f, br1_f, ul2_f, br2_f = ul1_t // 8, br1_t // 8, ul2_t // 8, br2_t // 8
@@ -319,10 +325,13 @@ class VCL(BaseModel):
 
                 # pseudo_label_list1.append(pseudo_label1_idx[ul1_f[0, idx]:br1_f[0, idx], ul1_f[1, idx]:br1_f[1, idx]].contiguous().view(-1))
                 # pseudo_label_list2.append(pseudo_label2_idx[ul2_f[0, idx]:br2_f[0, idx], ul2_f[1, idx]:br2_f[1, idx]].contiguous().view(-1))
-                pseudo_label_list1_up.append(pseudo_label1_idx_up[ul1_f_up[0, idx]:br1_f_up[0, idx], ul1_f_up[1, idx]:br1_f_up[1, idx]].contiguous().view(-1))
-                pseudo_label_list2_up.append(pseudo_label2_idx_up[ul2_f_up[0, idx]:br2_f_up[0, idx], ul2_f_up[1, idx]:br2_f_up[1, idx]].contiguous().view(-1))
                 # pseudo_logits_list1.append(pseudo_logits_1_idx[ul1_f[0, idx]:br1_f[0, idx], ul1_f[1, idx]:br1_f[1, idx]].contiguous().view(-1))
                 # pseudo_logits_list2.append(pseudo_logits_2_idx[ul2_f[0, idx]:br2_f[0, idx], ul2_f[1, idx]:br2_f[1, idx]].contiguous().view(-1))
+                pseudo_label_list1_up.append(pseudo_label1_idx_up[ul1_f_up[0, idx]:br1_f_up[0, idx], ul1_f_up[1, idx]:br1_f_up[1, idx]].contiguous().view(-1))
+                pseudo_label_list2_up.append(pseudo_label2_idx_up[ul2_f_up[0, idx]:br2_f_up[0, idx], ul2_f_up[1, idx]:br2_f_up[1, idx]].contiguous().view(-1))
+                pseudo_logits_list1_up.append(pseudo_logits_1_idx_up[ul1_f_up[0, idx]:br1_f_up[0, idx], ul1_f_up[1, idx]:br1_f_up[1, idx]].contiguous().view(-1))
+                pseudo_logits_list2_up.append(pseudo_logits_2_idx_up[ul2_f_up[0, idx]:br2_f_up[0, idx], ul2_f_up[1, idx]:br2_f_up[1, idx]].contiguous().view(-1))
+
             # output_feat1 = torch.cat(output_feature_list1, 0) #[n, c] 所有重叠区域像素特征集合
             # output_feat2 = torch.cat(output_feature_list2, 0) #[n, c]
             # pseudo_label1_overlap = torch.cat(pseudo_label_list1, 0) #[n,] #所有重叠区域像素伪标签集合
@@ -447,9 +456,9 @@ class VCL(BaseModel):
             # # return total_loss, curr_losses, outputs
             ##################### inter-video loss #############################################
 
-            feats_, labels_ = self._anchor_sampling(enc_l, pred_key, target_l, output_ul1_up, output_ul2_up, pseudo_label1_up,pseudo_label2_up,
+            feats_, labels_ = self._anchor_sampling(enc_l, pred_key, target_l, output_ul1_up, output_ul2_up, pseudo_logits1_up,pseudo_logits2_up,pseudo_label1_up,pseudo_label2_up,
                                                     enc_feature_list1_up, enc_feature_list2_up, pseudo_label_list1_up, pseudo_label_list2_up,
-                                                    ul1_f_up, ul2_f_up, br1_f_up, br2_f_up)
+                                                    pseudo_logits_list1_up, pseudo_logits_list2_up, ul1_f_up, ul2_f_up, br1_f_up, br2_f_up,epoch)
             feats_norm = F.normalize(feats_, dim=-1)
             #loss
             loss_inter = self.weight_inter * self._contrastive(feats_norm, labels_.squeeze(0), queue=self.segment_queue)
@@ -589,14 +598,9 @@ class VCL(BaseModel):
                     # idxs = (this_label == lb).nonzero()
                     lb=lb.long()
                     idxs_easy = ((this_label == lb).float() * (this_preds == lb).float()).nonzero().squeeze(-1)
-                    idxs_hard = ((this_label == lb).float() * (this_preds != lb).float()).nonzero().squeeze(-1)
-                    # print(idxs_easy.shape)
-                    # if
-                    weight_easy = torch.ones(idxs_easy.shape[0], 1).cuda()
-                    weight_hard = this_probs[lb, idxs_hard].unsqueeze(-1)
-                    new_feat = torch.cat([this_feat[idxs_easy, :],this_feat[idxs_hard, :]], dim=0)
-                    new_weight = torch.softmax(torch.cat([weight_easy, weight_hard]), dim=0)
-                    feat = torch.sum(new_feat * new_weight.repeat(1, feat_dim), dim=0)
+                    new_feat = this_feat[idxs_easy, :]
+                    # new_weight = torch.softmax(torch.cat([weight_easy, weight_hard]), dim=0)
+                    feat = torch.mean(new_feat, dim=0)
                     ptr = int(segment_queue_ptr[lb])
                     K=idxs_easy.shape[0]
                     if ptr+K <= self.queue_len:
@@ -608,76 +612,23 @@ class VCL(BaseModel):
                         segment_queue_ptr[lb] = self.queue_len
                     elif ptr == self.queue_len:
                          segment_queue[lb, :, :] =torch.cat([segment_queue[lb, 1:, :], F.normalize(feat.unsqueeze(0), dim=1)], 0)
-    def _anchor_sampling(self, enc_l, pred_key,target_l, output_ul1_up, output_ul2_up, pseudo_label1_up, pseudo_label2_up, enc_feature_list1_up, enc_feature_list2_up, pseudo_label_list1_up, pseudo_label_list2_up,
-                         ul1_f_up, ul2_f_up,br1_f_up, br2_f_up ):
+    def _anchor_sampling(self, enc_l, pred_key,target_l, output_ul1_up, output_ul2_up,pseudo_logits1_up,pseudo_logits2_up, pseudo_label1_up, pseudo_label2_up, enc_feature_list1_up, enc_feature_list2_up, pseudo_label_list1_up, pseudo_label_list2_up,
+                         pseudo_logits_list1_up, pseudo_logits_list2_up,ul1_f_up, ul2_f_up,br1_f_up, br2_f_up ,epoch):
+        # prob_l = F.softmax(pred_key, 1).max(1)[0].detach()
         b,c,w,h=output_ul1_up.size()
         n_anchor = self.max_samples
         feats_ = torch.zeros(0, n_anchor, c).cuda()
         labels_ = torch.zeros(0).cuda()
-        # # unsupervised anchor sample
-        for idx in range(b):
-            inx_mask = torch.ones(h, w)
-            x_ul1_mask_idx = inx_mask.clone()
-            x_ul1_mask_idx[ul1_f_up[0, idx]:br1_f_up[0, idx], ul1_f_up[1, idx]:br1_f_up[1, idx]] = 0
-            x_ul1_anchor_idx = x_ul1_mask_idx.nonzero()
-            x_ul1_anchors_feat_idx = output_ul1_up[idx, :, x_ul1_anchor_idx[:, 0], x_ul1_anchor_idx[:, 1]].permute(1, 0)
-            x_ul1_anchors_lb_idx = pseudo_label1_up[idx, x_ul1_anchor_idx[:, 0], x_ul1_anchor_idx[:, 1]]
 
-            x_ul2_mask_idx = inx_mask.clone()
-            x_ul2_mask_idx[ul2_f_up[0, idx]:br2_f_up[0, idx], ul2_f_up[1, idx]:br2_f_up[1, idx]] = 0
-            x_ul2_anchor_idx = x_ul2_mask_idx.nonzero()
-            x_ul2_anchors_feat_idx = output_ul2_up[idx, :, x_ul2_anchor_idx[:, 0], x_ul2_anchor_idx[:, 1]].permute(1, 0)
-            x_ul2_anchors_lb_idx = pseudo_label2_up[idx, x_ul2_anchor_idx[:, 0], x_ul2_anchor_idx[:, 1]]
-
-            easy_anchor_idx = (pseudo_label_list1_up[idx] == pseudo_label_list2_up[idx]).nonzero().squeeze(-1)
-            easy1_anchor_feat_idx = enc_feature_list1_up[idx][easy_anchor_idx, :]
-            easy1_anchor_lb_idx = pseudo_label_list1_up[idx][easy_anchor_idx]
-            easy2_anchor_feat_idx = enc_feature_list2_up[idx][easy_anchor_idx, :]
-            easy2_anchor_lb_idx = pseudo_label_list2_up[idx][easy_anchor_idx]
-
-            random_ul_anchor_feat = torch.cat(
-                [x_ul1_anchors_feat_idx, x_ul2_anchors_feat_idx, easy1_anchor_feat_idx, easy2_anchor_feat_idx], 0)
-            random_ul_anchor_lb = torch.cat(
-                [x_ul1_anchors_lb_idx, x_ul2_anchors_lb_idx, easy1_anchor_lb_idx, easy2_anchor_lb_idx], 0)
-
-            hard_ul_anchor_idx = (pseudo_label_list1_up[idx] != pseudo_label_list2_up[idx]).nonzero().squeeze(-1)
-            hard1_anchor_feat_idx = enc_feature_list1_up[idx][hard_ul_anchor_idx, :]
-            hard1_anchor_lb_idx = pseudo_label_list1_up[idx][hard_ul_anchor_idx]
-            hard2_anchor_feat_idx = enc_feature_list2_up[idx][hard_ul_anchor_idx, :]
-            hard2_anchor_lb_idx = pseudo_label_list2_up[idx][hard_ul_anchor_idx]
-            hard_ul_anchor_feat = torch.cat([hard1_anchor_feat_idx, hard2_anchor_feat_idx], 0)
-            hard_ul_anchor_lb = torch.cat([hard1_anchor_lb_idx, hard2_anchor_lb_idx], 0)
-
-            this_classes = torch.unique(torch.cat([hard_ul_anchor_lb, random_ul_anchor_lb]))
-            this_classes = [x for x in this_classes if x != self.ignore_index]
-            # this_classes = [x for x in this_classes if self.segment_queue_ptr[x] == self.queue_len]
-            this_classes = [x for x in this_classes if (random_ul_anchor_lb == x).float().sum() + (
-                        hard_ul_anchor_lb == x).float().sum() > n_anchor]
-            for cls_id in this_classes:
-                hard_indices = (hard_ul_anchor_lb == cls_id).nonzero().squeeze(-1)
-                random_indices = (random_ul_anchor_lb == cls_id).nonzero().squeeze(-1)
-                num_hard = hard_indices.shape[0]
-                num_random = random_indices.shape[0]
-                if num_hard >= n_anchor / 2 and num_random >= n_anchor / 2:
-                    num_hard_keep = n_anchor // 2
-                    num_random_keep = n_anchor - num_hard_keep
-                elif num_hard >= n_anchor / 2:
-                    num_random_keep = num_random
-                    num_hard_keep = n_anchor - num_random_keep
-                elif num_random >= n_anchor / 2:
-                    num_hard_keep = num_hard
-                    num_random_keep = n_anchor - num_hard_keep
-                else:
-                    raise Exception('this shoud be never touched! {} {} {}'.format(num_hard, num_random, n_anchor))
-                perm = torch.randperm(num_hard)
-                hard_indices = hard_indices[perm[:num_hard_keep]]
-                perm = torch.randperm(num_random)
-                random_indices = random_indices[perm[:num_random_keep]]
-                # indices = torch.cat((hard_indices, random_indices), dim=0)
-                this_class_feat = torch.cat(
-                    [hard_ul_anchor_feat[hard_indices, :], random_ul_anchor_feat[random_indices, :]], 0)
-                feats_ = torch.cat([feats_, this_class_feat.unsqueeze(0)], 0)
-                labels_ = torch.cat([labels_, cls_id.unsqueeze(0)], 0)
+        alpha_t=20
+        easy_thresh=0.95
+        hard_thresh=0.85
+        # with torch.no_grad():
+        #     # prob = torch.softmax(enc_feature_list1_up, dim=1)
+        #     entropy = -torch.sum(pseudo_logits_list1_up * torch.log(pseudo_logits_list1_up + 1e-10), dim=1)
+        #     low_thresh = np.percentile(
+        #         entropy.cpu().numpy().flatten(), alpha_t
+        #     )
 
         # supervised anchor sample
         target_l_down=F.interpolate(target_l.float().unsqueeze(1), size=enc_l.size()[2:], mode='nearest').squeeze(1)
@@ -714,4 +665,66 @@ class VCL(BaseModel):
                 this_class_feat = torch.cat([this_feat_l[hard_indices, :], this_feat_l[easy_indices, :]], 0)
                 feats_ = torch.cat([feats_, this_class_feat.unsqueeze(0)], 0)
                 labels_ = torch.cat([labels_, cls_id.unsqueeze(0)], 0)
+
+        # # unsupervised anchor sample
+        if epoch >= 50:
+            for idx in range(b):
+                inx_mask = torch.ones(h, w)
+                x_ul1_mask_idx = inx_mask.clone()
+                x_ul1_mask_idx[ul1_f_up[0, idx]:br1_f_up[0, idx], ul1_f_up[1, idx]:br1_f_up[1, idx]] = 0
+
+                x_ul1_anchor_idx = (x_ul1_mask_idx*(pseudo_logits1_up[idx]>=easy_thresh)).nonzero()
+                x_ul1_anchors_feat_idx = output_ul1_up[idx, :, x_ul1_anchor_idx[:, 0], x_ul1_anchor_idx[:, 1]].permute(1, 0)
+                x_ul1_anchors_lb_idx = pseudo_label1_up[idx, x_ul1_anchor_idx[:, 0], x_ul1_anchor_idx[:, 1]]
+
+                pseudo_logits_list_max, max_logit_idx_of_12 = torch.max(torch.stack([pseudo_logits_list1_up[idx],pseudo_logits_list2_up[idx]],0),0)
+                enc_feature_together=torch.stack([enc_feature_list1_up[idx],enc_feature_list2_up[idx]],0)
+                enc_feature_max=enc_feature_together[max_logit_idx_of_12, range(enc_feature_together.shape[1]), :]
+
+                easy_anchor_idx = ((pseudo_label_list1_up[idx] == pseudo_label_list2_up[idx])*(pseudo_logits_list_max>=easy_thresh)).nonzero().squeeze(-1)
+                easy_anchor_feat_idx = enc_feature_max[easy_anchor_idx, :]
+                easy_anchor_prob_idx = pseudo_logits_list_max[easy_anchor_idx]
+                easy_anchor_lb_idx = pseudo_label_list1_up[idx][easy_anchor_idx]
+
+                random_ul_anchor_feat = torch.cat(
+                    [x_ul1_anchors_feat_idx, easy_anchor_feat_idx], 0)
+                random_ul_anchor_lb = torch.cat(
+                    [x_ul1_anchors_lb_idx, easy_anchor_lb_idx], 0)
+
+                hard_ul_anchor_idx = ((pseudo_label_list1_up[idx] != pseudo_label_list2_up[idx])*(pseudo_logits1_up[idx]>=hard_thresh)).nonzero().squeeze(-1)
+                hard_ul_anchor_feat = enc_feature_max[hard_ul_anchor_idx, :]
+                hard_ul_anchor_lb = pseudo_label_list1_up[idx][hard_ul_anchor_idx]
+
+                this_classes = torch.unique(torch.cat([hard_ul_anchor_lb, random_ul_anchor_lb]))
+                this_classes = [x for x in this_classes if x != self.ignore_index]
+                # this_classes = [x for x in this_classes if self.segment_queue_ptr[x] == self.queue_len]
+                this_classes = [x for x in this_classes if (random_ul_anchor_lb == x).float().sum() + (
+                            hard_ul_anchor_lb == x).float().sum() > n_anchor]
+                for cls_id in this_classes:
+                    hard_indices = (hard_ul_anchor_lb == cls_id).nonzero().squeeze(-1)
+                    random_indices = (random_ul_anchor_lb == cls_id).nonzero().squeeze(-1)
+                    num_hard = hard_indices.shape[0]
+                    num_random = random_indices.shape[0]
+                    if num_hard >= n_anchor / 2 and num_random >= n_anchor / 2:
+                        num_hard_keep = n_anchor // 2
+                        num_random_keep = n_anchor - num_hard_keep
+                    elif num_hard >= n_anchor / 2:
+                        num_random_keep = num_random
+                        num_hard_keep = n_anchor - num_random_keep
+                    elif num_random >= n_anchor / 2:
+                        num_hard_keep = num_hard
+                        num_random_keep = n_anchor - num_hard_keep
+                    else:
+                        raise Exception('this shoud be never touched! {} {} {}'.format(num_hard, num_random, n_anchor))
+                    perm = torch.randperm(num_hard)
+                    hard_indices = hard_indices[perm[:num_hard_keep]]
+                    perm = torch.randperm(num_random)
+                    random_indices = random_indices[perm[:num_random_keep]]
+                    # indices = torch.cat((hard_indices, random_indices), dim=0)
+                    this_class_feat = torch.cat(
+                        [hard_ul_anchor_feat[hard_indices, :], random_ul_anchor_feat[random_indices, :]], 0)
+                    feats_ = torch.cat([feats_, this_class_feat.unsqueeze(0)], 0)
+                    labels_ = torch.cat([labels_, cls_id.unsqueeze(0)], 0)
+
+
         return feats_, labels_

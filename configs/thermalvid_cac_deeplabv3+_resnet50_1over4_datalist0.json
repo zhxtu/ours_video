@@ -40,7 +40,7 @@
         "temp": 0.1,
         "step_save": 2,
         "stride": 8,
-        "queue_len": 2000,
+        "queue_len": 1000,
         "max_samples": 50
     },
 
@@ -48,7 +48,7 @@
     "optimizer": {
         "type": "SGD",
         "args":{
-            "lr": 0.002,
+            "lr": 0.01,
             "weight_decay": 1e-4,
             "momentum": 0.9
         }

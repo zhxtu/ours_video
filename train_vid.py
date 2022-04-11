@@ -5,7 +5,8 @@ import json
 import argparse
 import torch
 import dataloaders
-from models.model_reco import VCL
+# from models.model_reco import VCL
+from models.model_vid_re import VCL
 import math
 import copy
 from utils import Logger
@@ -147,10 +148,11 @@ if __name__ == '__main__':
     # PARSE THE ARGS
     os.environ['CUDA_VISIBLE_DEVICES'] = '0, 1'
     parser = argparse.ArgumentParser(description='PyTorch Training')
-    parser.add_argument('-c', '--config', default='configs/thermalvid_cac_deeplabv3+_resnet50_1over4_datalist0.json',
-                        type=str,
+    parser.add_argument('-c', '--config', default='configs/thermalvid_cac_deeplabv3+_resnet50_1over4_datalist0.json',type=str,
                         help='Path to the config file')
-    parser.add_argument('-r', '--resume', default='/home/zhengyu/ours_video/runs/thermalvid_cac_deeplabv3+_resnet50_1over4_datalist0/03-31_10-22/checkpoint.pth', type=str,
+    # parser.add_argument('-r', '--resume', default='/home/zhengyu/ours_video/runs/thermalvid_cac_deeplabv3+_resnet50_1over4_datalist0/03-31_10-22/checkpoint.pth', type=str,
+    #                     help='Path to the .pth model checkpoint to resume training')
+    parser.add_argument('-r', '--resume', default='', type=str,
                         help='Path to the .pth model checkpoint to resume training')
     parser.add_argument('-t', '--test', default=False, type=bool,
                         help='whether to test')
