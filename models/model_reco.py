@@ -49,7 +49,7 @@ class VCL(BaseModel):
         self.xent = nn.CrossEntropyLoss(ignore_index=self.ignore_mask, reduction="none")
         self.queue_len = conf['queue_len']
         self.max_samples = conf['max_samples']
-        self.gpu_mem = open("/home/zhengyu/ours_video/gpu_memory.txt", 'w+')
+        # self.gpu_mem = open("/home/zhengyu/ours_video/gpu_memory.txt", 'w+')
         self.register_buffer("segment_queue", torch.randn(num_classes, self.queue_len, self.proj_final_dim))
         self.segment_queue = F.normalize(self.segment_queue, p=2, dim=2)
         self.register_buffer("segment_queue_ptr", torch.zeros(num_classes, dtype=torch.long))
@@ -159,7 +159,7 @@ class VCL(BaseModel):
             if epoch < self.epoch_start_cycle:
                 return total_loss, curr_losses, outputs
             #####################Memory Construction############################################
-            print("1:{}".format(torch.cuda.memory_allocated(0)), file=self.gpu_mem)
+            # print("1:{}".format(torch.cuda.memory_allocated(0)), file=self.gpu_mem)
             # model.eval()
             # proj_labeled_features_correct = model.projection_head(labeled_features_correct)
             # model.train()
