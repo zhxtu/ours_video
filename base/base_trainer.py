@@ -5,7 +5,7 @@ from utils import helpers
 from utils import logger
 import utils.lr_scheduler
 from utils.helpers import dir_exists
-from memory_profiler import profile
+# from memory_profiler import profile
 def get_instance(module, name, config, *args):
     return getattr(module, config[name]['type'])(*args, **config[name]['args'])
 
@@ -113,8 +113,8 @@ class BaseTrainer:
                 self.logger.info('\n')
                 for k, v in results.items():
                     self.logger.info(f'         {str(k):15s}: {v}')
-            return 
-
+            return
+        # self.scaler = torch.cuda.amp.GradScaler()
         for epoch in range(self.start_epoch, self.epochs+1):
             self._train_epoch(epoch)
             if self.do_validation and epoch % self.config['trainer']['val_per_epochs'] == 0:

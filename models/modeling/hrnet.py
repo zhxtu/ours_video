@@ -14,32 +14,32 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from lib.models.backbones.backbone_selector import BackboneSelector
-from lib.models.tools.module_helper import ModuleHelper
-from lib.models.modules.projection import ProjectionHead
-from lib.utils.tools.logger import Logger as Log
-from lib.models.modules.hanet_attention import HANet_Conv
-
+from models.modeling.backbone.hrnet_backbone import HRNetBackbone
+from utils.module_helper import ModuleHelper
+# from lib.models.modules.projection import ProjectionHead
+# from lib.utils.tools.logger import Logger as Log
+# from lib.models.modules.hanet_attention import HANet_Conv
+from models.modeling.spatial_ocr_block import SpatialGather_Module, SpatialOCR_Module
 
 class HRNet_W48(nn.Module):
     """
     deep high-resolution representation learning for human pose estimation, CVPR2019
     """
 
-    def __init__(self, configer):
+    def __init__(self, arch, num_classes):
         super(HRNet_W48, self).__init__()
-        self.configer = configer
-        self.num_classes = self.configer.get('data', 'num_classes')
-        self.backbone = BackboneSelector(configer).get_backbone()
+        # self.configer = configer
+        # self.num_classes = self.configer.get('data', 'num_classes')
+        self.backbone = HRNetBackbone(arch)
 
         # extra added layers
         in_channels = 720  # 48 + 96 + 192 + 384
-        self.cls_head = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(in_channels, bn_type=self.configer.get('network', 'bn_type')),
-            nn.Dropout2d(0.10),
-            nn.Conv2d(in_channels, self.num_classes, kernel_size=1, stride=1, padding=0, bias=False)
-        )
+        # self.cls_head = nn.Sequential(
+        #     nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
+        #     ModuleHelper.BNReLU(in_channels, bn_type='torchsyncbn'),
+        #     nn.Dropout2d(0.10),
+        #     nn.Conv2d(in_channels, self.num_classes, kernel_size=1, stride=1, padding=0, bias=False)
+        # )
 
     def forward(self, x_):
         x = self.backbone(x_)
@@ -51,10 +51,16 @@ class HRNet_W48(nn.Module):
         feat4 = F.interpolate(x[3], size=(h, w), mode="bilinear", align_corners=True)
 
         feats = torch.cat([feat1, feat2, feat3, feat4], 1)
-        out = self.cls_head(feats)
-        out = F.interpolate(out, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
-        return out
+        # out = self.cls_head(feats)
+        # out = F.interpolate(out, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
+        return feats
 
+
+    def get_backbone_params(self):
+        return self.backbone.parameters()
+
+    def get_module_params(self):
+        return []
 
 class HRNet_W48_CONTRAST(nn.Module):
     """
@@ -110,7 +116,7 @@ class HRNet_W48_OCR_CONTRAST(nn.Module):
         )
         from lib.models.modules.spatial_ocr_block import SpatialGather_Module
         self.ocr_gather_head = SpatialGather_Module(self.num_classes)
-        from lib.models.modules.spatial_ocr_block import SpatialOCR_Module
+        
         self.ocr_distri_head = SpatialOCR_Module(in_channels=512,
                                                  key_channels=256,
                                                  out_channels=512,
@@ -202,7 +208,7 @@ class HRNet_W48_OCR(nn.Module):
         )
         from lib.models.modules.spatial_ocr_block import SpatialGather_Module
         self.ocr_gather_head = SpatialGather_Module(self.num_classes)
-        from lib.models.modules.spatial_ocr_block import SpatialOCR_Module
+        
         self.ocr_distri_head = SpatialOCR_Module(in_channels=512,
                                                  key_channels=256,
                                                  out_channels=512,
@@ -239,38 +245,71 @@ class HRNet_W48_OCR(nn.Module):
         out = F.interpolate(out, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
         return out_aux, out
 
+class classifier_OCR(nn.Module):
+    def __init__(self, num_classes):
+        super(classifier_OCR, self).__init__()
+        in_channels = 720  # 48 + 96 + 192 + 384
+        self.conv3x3 = nn.Sequential(
+            nn.Conv2d(in_channels, 256, kernel_size=3, stride=1, padding=1),
+            ModuleHelper.BNReLU(256, bn_type='torchsyncbn'),
+        )
 
+        self.ocr_gather_head = SpatialGather_Module(num_classes)
+        self.ocr_distri_head = SpatialOCR_Module(in_channels=256,
+                                                 key_channels=128,
+                                                 out_channels=256,
+                                                 scale=1,
+                                                 dropout=0.05,
+                                                 bn_type='torchsyncbn')
+
+        self.cls_head = nn.Conv2d(256, num_classes, kernel_size=1, stride=1, padding=0, bias=True)
+        self.aux_head = nn.Sequential(
+            nn.Conv2d(in_channels, 256, kernel_size=3, stride=1, padding=1),
+            ModuleHelper.BNReLU(256, bn_type='torchsyncbn'),
+            nn.Conv2d(256, num_classes, kernel_size=1, stride=1, padding=0, bias=True)
+        )
+
+    def forward(self, feats):
+        out_aux = self.aux_head(feats)
+
+        feats = self.conv3x3(feats)
+
+        context = self.ocr_gather_head(feats, out_aux)
+        feats = self.ocr_distri_head(feats, context)
+
+        out = self.cls_head(feats)
+
+        return out
 class HRNet_W48_OCR_B(nn.Module):
     """
     Considering that the 3x3 convolution on the 4x resolution feature map is expensive,
     we can decrease the intermediate channels from 512 to 256 w/o performance loss.
     """
 
-    def __init__(self, configer):
+    def __init__(self, arch, num_classes):
         super(HRNet_W48_OCR_B, self).__init__()
-        self.configer = configer
-        self.num_classes = self.configer.get('data', 'num_classes')
-        self.backbone = BackboneSelector(configer).get_backbone()
+
+        self.num_classes = num_classes
+        self.backbone = HRNetBackbone(arch)
 
         in_channels = 720  # 48 + 96 + 192 + 384
         self.conv3x3 = nn.Sequential(
             nn.Conv2d(in_channels, 256, kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(256, bn_type=self.configer.get('network', 'bn_type')),
+            ModuleHelper.BNReLU(256, bn_type='torchsyncbn'),
         )
-        from lib.models.modules.spatial_ocr_block import SpatialGather_Module
-        self.ocr_gather_head = SpatialGather_Module(self.num_classes)
-        from lib.models.modules.spatial_ocr_block import SpatialOCR_Module
+
+        self.ocr_gather_head = SpatialGather_Module()
         self.ocr_distri_head = SpatialOCR_Module(in_channels=256,
                                                  key_channels=128,
                                                  out_channels=256,
                                                  scale=1,
                                                  dropout=0.05,
-                                                 bn_type=self.configer.get('network', 'bn_type'))
+                                                 bn_type='torchsyncbn')
 
-        self.cls_head = nn.Conv2d(256, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
+        # self.cls_head = nn.Conv2d(256, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
         self.aux_head = nn.Sequential(
             nn.Conv2d(in_channels, 256, kernel_size=3, stride=1, padding=1),
-            ModuleHelper.BNReLU(256, bn_type=self.configer.get('network', 'bn_type')),
+            ModuleHelper.BNReLU(256, bn_type='torchsyncbn'),
             nn.Conv2d(256, self.num_classes, kernel_size=1, stride=1, padding=0, bias=True)
         )
 
@@ -288,15 +327,22 @@ class HRNet_W48_OCR_B(nn.Module):
 
         feats = self.conv3x3(feats)
 
-        context = self.ocr_gather_head(feats, out_aux)
-        feats = self.ocr_distri_head(feats, context)
+        # context = self.ocr_gather_head(feats, out_aux)
+        # feats = self.ocr_distri_head(feats, context)
 
-        out = self.cls_head(feats)
+        # out = self.cls_head(feats)
 
-        out_aux = F.interpolate(out_aux, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
-        out = F.interpolate(out, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
-        return out_aux, out
+        # out_aux = F.interpolate(out_aux, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
+        # out = F.interpolate(out, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
+        return feats#out_aux, out
 
+
+
+    def get_backbone_params(self):
+        return self.base.parameters()
+
+    def get_module_params(self):
+        return self.psp.parameters()
 
 class HRNet_W48_OCR_B_HA(nn.Module):
     """
@@ -315,9 +361,9 @@ class HRNet_W48_OCR_B_HA(nn.Module):
             nn.Conv2d(in_channels, 256, kernel_size=3, stride=1, padding=1),
             ModuleHelper.BNReLU(256, bn_type=self.configer.get('network', 'bn_type')),
         )
-        from lib.models.modules.spatial_ocr_block import SpatialGather_Module
+        
         self.ocr_gather_head = SpatialGather_Module(self.num_classes)
-        from lib.models.modules.spatial_ocr_block import SpatialOCR_Module
+        
         self.ocr_distri_head = SpatialOCR_Module(in_channels=256,
                                                  key_channels=128,
                                                  out_channels=256,
@@ -362,4 +408,4 @@ class HRNet_W48_OCR_B_HA(nn.Module):
 
         out_aux = F.interpolate(out_aux, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
         out = F.interpolate(out, size=(x_.size(2), x_.size(3)), mode="bilinear", align_corners=True)
-        return out_aux, out
+        return out

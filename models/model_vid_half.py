@@ -7,13 +7,13 @@ from base import BaseModel
 from utils.losses import *
 from models.encoder import Encoder
 from models.modeling.deeplab import DeepLab as DeepLab_v3p
-from models.modeling.hrnet import HRNet_W48, HRNet_W48_OCR_B, classifier_OCR
+# from models.modeling.hrnet import HRNet_W48, HRNet_W48_OCR_B, classifier_OCR
 # from models.modeling.net_utils import NLM, NLM_dot, NLM_woSoft, NLM_NC_woSoft, Batch_Contrastive
 import numpy as np
 import cv2
 import kornia
 from models.feature_memory import *
-# from memory_profiler import profile
+from memory_profiler import profile
 from utils.module_helper import ModuleHelper
 
 EPS = 1e-20
@@ -75,12 +75,12 @@ class VCL(BaseModel):
         elif self.backbone == 'psp':
             self.encoder = Encoder(pretrained=pretrained)
             self.classifier = nn.Conv2d(self.out_dim, num_classes, kernel_size=1, stride=1)
-        elif self.backbone == 'hrnet48':
-            self.encoder = HRNet_W48(arch='hrnet48', num_classes=num_classes)
-            self.classifier = nn.Conv2d(self.out_dim, num_classes, kernel_size=1, stride=1, padding=0, bias=True)
-        elif self.backbone == 'hrnet48_ocr':
-            self.encoder = HRNet_W48(arch='hrnet48', num_classes=num_classes)
-            self.classifier = classifier_OCR(num_classes)
+        # elif self.backbone == 'hrnet48':
+        #     self.encoder = HRNet_W48(arch='hrnet48', num_classes=num_classes)
+        #     self.classifier = nn.Conv2d(self.out_dim, num_classes, kernel_size=1, stride=1, padding=0, bias=True)
+        # elif self.backbone == 'hrnet48_ocr':
+        #     self.encoder = HRNet_W48(arch='hrnet48', num_classes=num_classes)
+        #     self.classifier = classifier_OCR(num_classes)
         else:
             raise ValueError("No such backbone {}".format(self.backbone))
 
@@ -127,6 +127,7 @@ class VCL(BaseModel):
             A = self.zeroout_diag(A)
 
         if do_dropout and self.edgedrop_rate > 0:
+            A = A.float()
             A[torch.rand_like(A) < self.edgedrop_rate] = -1e20
 
         return F.softmax(A / self.temperature, dim=-1)
@@ -237,9 +238,9 @@ class VCL(BaseModel):
                 g = A12s[:i + 1]
                 g.append(A12m[i])
                 g.extend(A12s[-(i + 1):])  # list相加为cat，构成闭环 #print(a[::-1]) ### 取从后向前的元素
-                aar = g[0]
+                aar = g[0].float()
                 for _a in g[1:]:
-                    aar = aar @ _a
+                    aar = (aar @ _a).float()
                 AAs.append((f"r{i}", aar))
             for i, aa in AAs:
                 walks[f"cyc {i}"] = [aa, self.xent_targets(aa)]  # xent_targets为0到1599的数据并重复B次，一维tensor
@@ -264,290 +265,290 @@ class VCL(BaseModel):
 
             ##################### unsup loss #############################################
             # x_ul: [batch_size, 2, 3, H, W]
-            # x_ul1 = x_ul[:, 0, :, :, :]
-            # x_ul2 = x_ul[:, 1, :, :, :]
-            #
-            # enc_ul1_up = self.encoder(x_ul1)
-            # # #if self.downsample:
-            # enc_ul1 = F.avg_pool2d(enc_ul1_up, kernel_size=2, stride=2)
-            # output_ul1 = self.project(enc_ul1)  # [b, c, h, w]
-            # output_ul1 = F.normalize(output_ul1, 2, 1)
-            #
-            # enc_ul2_up = self.encoder(x_ul2)
-            #
-            # # # if self.downsample:
-            # enc_ul2 = F.avg_pool2d(enc_ul2_up, kernel_size=2, stride=2)
-            # output_ul2 = self.project(enc_ul2)  # [b, c, h, w]
-            # output_ul2 = F.normalize(output_ul2, 2, 1)
-            #
-            # # compute pseudo label
-            # with torch.no_grad():
-            #     logits1 = self.classifier(enc_ul1)  # [batch_size, num_classes, h, w]
-            #     logits2 = self.classifier(enc_ul2)
-            #     pseudo_logits_1 = F.softmax(logits1, 1).max(1)[0].detach()  # [batch_size, h, w]
-            #     pseudo_logits_2 = F.softmax(logits2, 1).max(1)[0].detach()
-            #     pseudo_label1 = logits1.max(1)[1].detach()  # [batch_size, h, w]
-            #     pseudo_label2 = logits2.max(1)[1].detach()
-            #
-            # # get overlap part
-            # output_feature_list1 = []
-            # output_feature_list2 = []
-            # pseudo_label_list1 = []
-            # pseudo_label_list2 = []
-            # pseudo_logits_list1 = []
-            # pseudo_logits_list2 = []
-            #
-            # for idx in range(x_ul1.size(0)):
-            #     output_ul1_idx = output_ul1[idx]
-            #     output_ul2_idx = output_ul2[idx]
-            #
-            #     pseudo_label1_idx = pseudo_label1[idx]
-            #     pseudo_label2_idx = pseudo_label2[idx]
-            #     pseudo_logits_1_idx = pseudo_logits_1[idx]
-            #     pseudo_logits_2_idx = pseudo_logits_2[idx]
-            #
-            #     if flip[0][idx] == True:
-            #         output_ul1_idx = torch.flip(output_ul1_idx, dims=(2,))
-            #         pseudo_label1_idx = torch.flip(pseudo_label1_idx, dims=(1,))
-            #         pseudo_logits_1_idx = torch.flip(pseudo_logits_1_idx, dims=(1,))
-            #
-            #     if flip[1][idx] == True:
-            #         output_ul2_idx = torch.flip(output_ul2_idx, dims=(2,))
-            #         pseudo_label2_idx = torch.flip(pseudo_label2_idx, dims=(1,))
-            #         pseudo_logits_2_idx = torch.flip(pseudo_logits_2_idx, dims=(1,))
-            #
-            #     # 因为原图320，特征缩小了8倍，80×80，所以对应的原图空间特征也要/8
-            #     ul1_t, br1_t, ul2_t, br2_t = torch.stack(ul1, 0), torch.stack(br1, 0), torch.stack(ul2, 0), torch.stack(
-            #         br2, 0)
-            #     ul1_f, br1_f, ul2_f, br2_f = ul1_t // 8, br1_t // 8, ul2_t // 8, br2_t // 8
-            #     output_feature_list1.append(
-            #         output_ul1_idx[:, ul1_f[0, idx]:br1_f[0, idx], ul1_f[1, idx]:br1_f[1, idx]].permute(1, 2,
-            #                                                                                             0).contiguous().view(
-            #             -1, output_ul1.size(1)))
-            #     output_feature_list2.append(
-            #         output_ul2_idx[:, ul2_f[0, idx]:br2_f[0, idx], ul2_f[1, idx]:br2_f[1, idx]].permute(1, 2,
-            #                                                                                             0).contiguous().view(
-            #             -1, output_ul2.size(1)))
-            #     pseudo_label_list1.append(
-            #         pseudo_label1_idx[ul1_f[0, idx]:br1_f[0, idx], ul1_f[1, idx]:br1_f[1, idx]].contiguous().view(-1))
-            #     pseudo_label_list2.append(
-            #         pseudo_label2_idx[ul2_f[0, idx]:br2_f[0, idx], ul2_f[1, idx]:br2_f[1, idx]].contiguous().view(-1))
-            #     pseudo_logits_list1.append(
-            #         pseudo_logits_1_idx[ul1_f[0, idx]:br1_f[0, idx], ul1_f[1, idx]:br1_f[1, idx]].contiguous().view(-1))
-            #     pseudo_logits_list2.append(
-            #         pseudo_logits_2_idx[ul2_f[0, idx]:br2_f[0, idx], ul2_f[1, idx]:br2_f[1, idx]].contiguous().view(-1))
-            # output_feat1 = torch.cat(output_feature_list1, 0)  # [n, c] 所有重叠区域像素特征集合
-            # output_feat2 = torch.cat(output_feature_list2, 0)  # [n, c]
-            # pseudo_label1_overlap = torch.cat(pseudo_label_list1, 0)  # [n,] #所有重叠区域像素伪标签集合
-            # pseudo_label2_overlap = torch.cat(pseudo_label_list2, 0)  # [n,]
-            # pseudo_logits1_overlap = torch.cat(pseudo_logits_list1, 0)  # [n,]
-            # pseudo_logits2_overlap = torch.cat(pseudo_logits_list2, 0)  # [n,]
-            # assert output_feat1.size(0) == output_feat2.size(0)
-            # assert pseudo_label1_overlap.size(0) == pseudo_label2_overlap.size(0)
-            # assert output_feat1.size(0) == pseudo_label1_overlap.size(0)
-            #
-            # # concat across multi-gpus
-            # b, c, h, w = output_ul1.size()
-            # selected_num = self.selected_num
-            # output_ul1_flatten = output_ul1.permute(0, 2, 3, 1).contiguous().view(b * h * w, c)
-            # output_ul2_flatten = output_ul2.permute(0, 2, 3, 1).contiguous().view(b * h * w, c)
-            # selected_idx1 = np.random.choice(range(b * h * w), selected_num, replace=False)
-            # selected_idx2 = np.random.choice(range(b * h * w), selected_num, replace=False)
-            # output_ul1_flatten_selected = output_ul1_flatten[selected_idx1]
-            # output_ul2_flatten_selected = output_ul2_flatten[selected_idx2]
-            # output_ul_flatten_selected = torch.cat([output_ul1_flatten_selected, output_ul2_flatten_selected],
-            #                                        0)  # [2*kk, c]
-            # output_ul_all = self.concat_all_gather(output_ul_flatten_selected)  # [2*N, c]
-            #
-            # pseudo_label1_flatten_selected = pseudo_label1.view(-1)[selected_idx1]
-            # pseudo_label2_flatten_selected = pseudo_label2.view(-1)[selected_idx2]
-            # pseudo_label_flatten_selected = torch.cat([pseudo_label1_flatten_selected, pseudo_label2_flatten_selected],
-            #                                           0)  # [2*kk]
-            # pseudo_label_all = self.concat_all_gather(pseudo_label_flatten_selected)  # [2*N]
-            #
-            # self.feature_bank.append(output_ul_all)
-            # self.pseudo_label_bank.append(pseudo_label_all)
-            # if self.step_count > self.step_save:
-            #     self.feature_bank = self.feature_bank[1:]
-            #     self.pseudo_label_bank = self.pseudo_label_bank[1:]
-            # else:
-            #     self.step_count += 1
-            # output_ul_all = torch.cat(self.feature_bank, 0)
-            # pseudo_label_all = torch.cat(self.pseudo_label_bank, 0)
-            #
-            # eps = 1e-8
-            # pos1 = (output_feat1 * output_feat2.detach()).sum(-1,
-            #                                                   keepdim=True) / self.temp  # [n, 1] 共3573个重叠点 不同view的相同点为pos
-            # pos2 = (output_feat1.detach() * output_feat2).sum(-1, keepdim=True) / self.temp  # [n, 1]
-            #
-            # # compute loss1
-            # b = 8000
-            #
-            # def run1(pos, output_feat1, output_ul_idx, pseudo_label_idx, pseudo_label1_overlap, neg_max1):
-            #     # print("gpu: {}, i_1: {}".format(gpu, i))
-            #     mask1_idx = (pseudo_label_idx.unsqueeze(0) != pseudo_label1_overlap.unsqueeze(
-            #         -1)).float()  # [n, b] 找到3573个重叠点与view中所有点不同label的点作为neg
-            #     neg1_idx = (output_feat1 @ output_ul_idx.T) / self.temp  # [n, b] #将自身点之外的所有点当做neg 求相似度
-            #     logits1_neg_idx = (torch.exp(neg1_idx - neg_max1) * mask1_idx).sum(-1)  # [n, ]
-            #     return logits1_neg_idx
-            #
-            # def run1_0(pos, output_feat1, output_ul_idx, pseudo_label_idx, pseudo_label1_overlap):
-            #     # print("gpu: {}, i_1_0: {}".format(gpu, i))
-            #     mask1_idx = (pseudo_label_idx.unsqueeze(0) != pseudo_label1_overlap.unsqueeze(
-            #         -1)).float()  # [n, b] 找到3573个重叠点与view中所有点不同label的点作为neg
-            #     neg1_idx = (output_feat1 @ output_ul_idx.T) / self.temp  # [n, b] #将自身点之外的所有点当做neg 求相似度
-            #     neg1_idx = torch.cat([pos, neg1_idx], 1)  # [n, 1+b] 将pos与neg串起来
-            #     mask1_idx = torch.cat([torch.ones(mask1_idx.size(0), 1).float().cuda(), mask1_idx], 1)  # [n, 1+b]
-            #     neg_max1 = torch.max(neg1_idx, 1, keepdim=True)[0]  # [n, 1]
-            #     logits1_neg_idx = (torch.exp(neg1_idx - neg_max1) * mask1_idx).sum(-1)  # [n, ]
-            #     return logits1_neg_idx, neg_max1
-            #
-            # N = output_ul_all.size(0)
-            # logits1_down = torch.zeros(pos1.size(0)).float().cuda()
-            # for i in range((N - 1) // b + 1):
-            #     # print("gpu: {}, i: {}".format(gpu, i))
-            #     pseudo_label_idx = pseudo_label_all[i * b:(i + 1) * b]  # 每次8000个点
-            #     output_ul_idx = output_ul_all[i * b:(i + 1) * b]
-            #     if i == 0:
-            #         logits1_neg_idx, neg_max1 = torch.utils.checkpoint.checkpoint(run1_0, pos1, output_feat1,
-            #                                                                       output_ul_idx, pseudo_label_idx,
-            #                                                                       pseudo_label1_overlap)
-            #     else:
-            #         logits1_neg_idx = torch.utils.checkpoint.checkpoint(run1, pos1, output_feat1, output_ul_idx,
-            #                                                             pseudo_label_idx, pseudo_label1_overlap,
-            #                                                             neg_max1)
-            #     logits1_down += logits1_neg_idx
-            #
-            # logits1 = torch.exp(pos1 - neg_max1).squeeze(-1) / (logits1_down + eps)
-            #
-            # pos_mask_1 = ((pseudo_logits2_overlap > self.pos_thresh_value) & (
-            #             pseudo_logits1_overlap < pseudo_logits2_overlap)).float()
-            # loss1 = -torch.log(logits1 + eps)
-            # loss1 = (loss1 * pos_mask_1).sum() / (pos_mask_1.sum() + 1e-12)
-            #
-            # # compute loss2
-            # def run2(pos, output_feat2, output_ul_idx, pseudo_label_idx, pseudo_label2_overlap, neg_max2):
-            #     # print("gpu: {}, i_2: {}".format(gpu, i))
-            #     mask2_idx = (pseudo_label_idx.unsqueeze(0) != pseudo_label2_overlap.unsqueeze(-1)).float()  # [n, b]
-            #     neg2_idx = (output_feat2 @ output_ul_idx.T) / self.temp  # [n, b]
-            #     logits2_neg_idx = (torch.exp(neg2_idx - neg_max2) * mask2_idx).sum(-1)  # [n, ]
-            #     return logits2_neg_idx
-            #
-            # def run2_0(pos, output_feat2, output_ul_idx, pseudo_label_idx, pseudo_label2_overlap):
-            #     # print("gpu: {}, i_2_0: {}".format(gpu, i))
-            #     mask2_idx = (pseudo_label_idx.unsqueeze(0) != pseudo_label2_overlap.unsqueeze(-1)).float()  # [n, b]
-            #     neg2_idx = (output_feat2 @ output_ul_idx.T) / self.temp  # [n, b]
-            #     neg2_idx = torch.cat([pos, neg2_idx], 1)  # [n, 1+b]
-            #     mask2_idx = torch.cat([torch.ones(mask2_idx.size(0), 1).float().cuda(), mask2_idx], 1)  # [n, 1+b]
-            #     neg_max2 = torch.max(neg2_idx, 1, keepdim=True)[0]  # [n, 1]
-            #     logits2_neg_idx = (torch.exp(neg2_idx - neg_max2) * mask2_idx).sum(-1)  # [n, ]
-            #     return logits2_neg_idx, neg_max2
-            #
-            # N = output_ul_all.size(0)
-            # logits2_down = torch.zeros(pos2.size(0)).float().cuda()
-            # for i in range((N - 1) // b + 1):
-            #     pseudo_label_idx = pseudo_label_all[i * b:(i + 1) * b]
-            #     output_ul_idx = output_ul_all[i * b:(i + 1) * b]
-            #     if i == 0:
-            #         logits2_neg_idx, neg_max2 = torch.utils.checkpoint.checkpoint(run2_0, pos2, output_feat2,
-            #                                                                       output_ul_idx, pseudo_label_idx,
-            #                                                                       pseudo_label2_overlap)
-            #     else:
-            #         logits2_neg_idx = torch.utils.checkpoint.checkpoint(run2, pos2, output_feat2, output_ul_idx,
-            #                                                             pseudo_label_idx, pseudo_label2_overlap,
-            #                                                             neg_max2)
-            #     logits2_down += logits2_neg_idx
-            #
-            # logits2 = torch.exp(pos2 - neg_max2).squeeze(-1) / (logits2_down + eps)
-            #
-            # pos_mask_2 = ((pseudo_logits1_overlap > self.pos_thresh_value) & (
-            #             pseudo_logits2_overlap < pseudo_logits1_overlap)).float()
-            #
-            # loss2 = -torch.log(logits2 + eps)
-            # loss2 = (loss2 * pos_mask_2).sum() / (pos_mask_2.sum() + 1e-12)
-            #
-            # loss_unsup = self.weight_unsup * (loss1 + loss2)
-            # # curr_losses['loss1'] = loss1
-            # # curr_losses['loss2'] = loss2
-            # curr_losses['loss_unsup'] = loss_unsup
-            # total_loss = total_loss + loss_unsup
-            # # if epoch < self.epoch_start_inter:
-            # #     return total_loss, curr_losses, outputs
-            # # return total_loss, curr_losses, outputs
-            # ##################### inter-video loss #############################################
-            #
-            # output_ul1_up = self.project(enc_ul1_up)
-            # output_ul1_up = F.normalize(output_ul1_up, 2, 1)
-            #
-            # output_ul2_up = self.project(enc_ul2_up)
-            # output_ul2_up = F.normalize(output_ul2_up, 2, 1)
-            #
-            # # compute pseudo label
-            # with torch.no_grad():
-            #     logits1_up = self.classifier(enc_ul1_up)  # [batch_size, num_classes, h, w]
-            #     logits2_up = self.classifier(enc_ul2_up)
-            #     pseudo_logits1_up = F.softmax(logits1_up, 1).max(1)[0].detach()  # [batch_size, h, w]
-            #     pseudo_logits2_up = F.softmax(logits2_up, 1).max(1)[0].detach()
-            #     pseudo_label1_up = logits1_up.max(1)[1].detach()  # [batch_size, h, w]
-            #     pseudo_label2_up = logits2_up.max(1)[1].detach()
-            #
-            # enc_feature_list1_up = []
-            # enc_feature_list2_up = []
-            # pseudo_logits_list1_up = []
-            # pseudo_logits_list2_up = []
-            # pseudo_label_list1_up = []
-            # pseudo_label_list2_up = []
-            # for idx in range(x_ul1.size(0)):
-            #     enc_ul1_idx_up = output_ul1_up[idx]
-            #     enc_ul2_idx_up = output_ul2_up[idx]
-            #     pseudo_label1_idx_up = pseudo_label1_up[idx]
-            #     pseudo_label2_idx_up = pseudo_label2_up[idx]
-            #     pseudo_logits_1_idx_up = pseudo_logits1_up[idx]
-            #     pseudo_logits_2_idx_up = pseudo_logits2_up[idx]
-            #     if flip[0][idx] == True:
-            #         enc_ul1_idx_up = torch.flip(enc_ul1_idx_up, dims=(2,))
-            #         pseudo_label1_idx_up = torch.flip(pseudo_label1_idx_up, dims=(1,))
-            #         pseudo_logits_1_idx_up = torch.flip(pseudo_logits_1_idx_up, dims=(1,))
-            #     if flip[1][idx] == True:
-            #         enc_ul2_idx_up = torch.flip(enc_ul2_idx_up, dims=(2,))
-            #         pseudo_label2_idx_up = torch.flip(pseudo_label2_idx_up, dims=(1,))
-            #         pseudo_logits_2_idx_up = torch.flip(pseudo_logits_2_idx_up, dims=(1,))
-            #     # 因为原图320，特征缩小了8倍，80×80，所以对应的原图空间特征也要/8
-            #     ul1_t, br1_t, ul2_t, br2_t = torch.stack(ul1, 0), torch.stack(br1, 0), torch.stack(ul2, 0), torch.stack(
-            #         br2, 0)
-            #     ul1_f_up, br1_f_up, ul2_f_up, br2_f_up = ul1_t // 4, br1_t // 4, ul2_t // 4, br2_t // 4
-            #     enc_feature_list1_up.append(
-            #         enc_ul1_idx_up[:, ul1_f_up[0, idx]:br1_f_up[0, idx], ul1_f_up[1, idx]:br1_f_up[1, idx]].permute(1,
-            #                                                                                                         2,
-            #                                                                                                         0).contiguous().view(
-            #             -1, output_ul1_up.size(1)))
-            #     enc_feature_list2_up.append(
-            #         enc_ul2_idx_up[:, ul2_f_up[0, idx]:br2_f_up[0, idx], ul2_f_up[1, idx]:br2_f_up[1, idx]].permute(1,
-            #                                                                                                         2,
-            #                                                                                                         0).contiguous().view(
-            #             -1, output_ul2_up.size(1)))
-            #     pseudo_label_list1_up.append(pseudo_label1_idx_up[ul1_f_up[0, idx]:br1_f_up[0, idx],
-            #                                  ul1_f_up[1, idx]:br1_f_up[1, idx]].contiguous().view(-1))
-            #     pseudo_label_list2_up.append(pseudo_label2_idx_up[ul2_f_up[0, idx]:br2_f_up[0, idx],
-            #                                  ul2_f_up[1, idx]:br2_f_up[1, idx]].contiguous().view(-1))
-            #     pseudo_logits_list1_up.append(pseudo_logits_1_idx_up[ul1_f_up[0, idx]:br1_f_up[0, idx],
-            #                                   ul1_f_up[1, idx]:br1_f_up[1, idx]].contiguous().view(-1))
-            #     pseudo_logits_list2_up.append(pseudo_logits_2_idx_up[ul2_f_up[0, idx]:br2_f_up[0, idx],
-            #                                   ul2_f_up[1, idx]:br2_f_up[1, idx]].contiguous().view(-1))
-            #
-            # feats_, labels_ = self._anchor_sampling(enc_l, pred_key, target_l, output_ul1_up, output_ul2_up,
-            #                                         pseudo_logits1_up, pseudo_logits2_up, pseudo_label1_up,
-            #                                         pseudo_label2_up,
-            #                                         enc_feature_list1_up, enc_feature_list2_up, pseudo_label_list1_up,
-            #                                         pseudo_label_list2_up,
-            #                                         pseudo_logits_list1_up, pseudo_logits_list2_up, ul1_f_up, ul2_f_up,
-            #                                         br1_f_up, br2_f_up, epoch)
-            # feats_norm = F.normalize(feats_, dim=-1)
-            # # loss
-            # loss_inter = self.weight_inter * self._contrastive(feats_norm, labels_.squeeze(0), queue=self.segment_queue)
-            # curr_losses['loss_inter'] = loss_inter
-            # total_loss = total_loss + loss_inter
-            # # if epoch < self.epoch_start_inter:
+            x_ul1 = x_ul[:, 0, :, :, :]
+            x_ul2 = x_ul[:, 1, :, :, :]
+
+            enc_ul1_up = self.encoder(x_ul1)
+            # #if self.downsample:
+            enc_ul1 = F.avg_pool2d(enc_ul1_up, kernel_size=2, stride=2)
+            output_ul1 = self.project(enc_ul1)  # [b, c, h, w]
+            output_ul1 = F.normalize(output_ul1, 2, 1)
+
+            enc_ul2_up = self.encoder(x_ul2)
+
+            # # if self.downsample:
+            enc_ul2 = F.avg_pool2d(enc_ul2_up, kernel_size=2, stride=2)
+            output_ul2 = self.project(enc_ul2)  # [b, c, h, w]
+            output_ul2 = F.normalize(output_ul2, 2, 1)
+
+            # compute pseudo label
+            with torch.no_grad():
+                logits1 = self.classifier(enc_ul1)  # [batch_size, num_classes, h, w]
+                logits2 = self.classifier(enc_ul2)
+                pseudo_logits_1 = F.softmax(logits1, 1).max(1)[0].detach()  # [batch_size, h, w]
+                pseudo_logits_2 = F.softmax(logits2, 1).max(1)[0].detach()
+                pseudo_label1 = logits1.max(1)[1].detach()  # [batch_size, h, w]
+                pseudo_label2 = logits2.max(1)[1].detach()
+
+            # get overlap part
+            output_feature_list1 = []
+            output_feature_list2 = []
+            pseudo_label_list1 = []
+            pseudo_label_list2 = []
+            pseudo_logits_list1 = []
+            pseudo_logits_list2 = []
+
+            for idx in range(x_ul1.size(0)):
+                output_ul1_idx = output_ul1[idx]
+                output_ul2_idx = output_ul2[idx]
+
+                pseudo_label1_idx = pseudo_label1[idx]
+                pseudo_label2_idx = pseudo_label2[idx]
+                pseudo_logits_1_idx = pseudo_logits_1[idx]
+                pseudo_logits_2_idx = pseudo_logits_2[idx]
+
+                if flip[0][idx] == True:
+                    output_ul1_idx = torch.flip(output_ul1_idx, dims=(2,))
+                    pseudo_label1_idx = torch.flip(pseudo_label1_idx, dims=(1,))
+                    pseudo_logits_1_idx = torch.flip(pseudo_logits_1_idx, dims=(1,))
+
+                if flip[1][idx] == True:
+                    output_ul2_idx = torch.flip(output_ul2_idx, dims=(2,))
+                    pseudo_label2_idx = torch.flip(pseudo_label2_idx, dims=(1,))
+                    pseudo_logits_2_idx = torch.flip(pseudo_logits_2_idx, dims=(1,))
+
+                # 因为原图320，特征缩小了8倍，80×80，所以对应的原图空间特征也要/8
+                ul1_t, br1_t, ul2_t, br2_t = torch.stack(ul1, 0), torch.stack(br1, 0), torch.stack(ul2, 0), torch.stack(
+                    br2, 0)
+                ul1_f, br1_f, ul2_f, br2_f = ul1_t // 8, br1_t // 8, ul2_t // 8, br2_t // 8
+                output_feature_list1.append(
+                    output_ul1_idx[:, ul1_f[0, idx]:br1_f[0, idx], ul1_f[1, idx]:br1_f[1, idx]].permute(1, 2,
+                                                                                                        0).contiguous().view(
+                        -1, output_ul1.size(1)))
+                output_feature_list2.append(
+                    output_ul2_idx[:, ul2_f[0, idx]:br2_f[0, idx], ul2_f[1, idx]:br2_f[1, idx]].permute(1, 2,
+                                                                                                        0).contiguous().view(
+                        -1, output_ul2.size(1)))
+                pseudo_label_list1.append(
+                    pseudo_label1_idx[ul1_f[0, idx]:br1_f[0, idx], ul1_f[1, idx]:br1_f[1, idx]].contiguous().view(-1))
+                pseudo_label_list2.append(
+                    pseudo_label2_idx[ul2_f[0, idx]:br2_f[0, idx], ul2_f[1, idx]:br2_f[1, idx]].contiguous().view(-1))
+                pseudo_logits_list1.append(
+                    pseudo_logits_1_idx[ul1_f[0, idx]:br1_f[0, idx], ul1_f[1, idx]:br1_f[1, idx]].contiguous().view(-1))
+                pseudo_logits_list2.append(
+                    pseudo_logits_2_idx[ul2_f[0, idx]:br2_f[0, idx], ul2_f[1, idx]:br2_f[1, idx]].contiguous().view(-1))
+            output_feat1 = torch.cat(output_feature_list1, 0)  # [n, c] 所有重叠区域像素特征集合
+            output_feat2 = torch.cat(output_feature_list2, 0)  # [n, c]
+            pseudo_label1_overlap = torch.cat(pseudo_label_list1, 0)  # [n,] #所有重叠区域像素伪标签集合
+            pseudo_label2_overlap = torch.cat(pseudo_label_list2, 0)  # [n,]
+            pseudo_logits1_overlap = torch.cat(pseudo_logits_list1, 0)  # [n,]
+            pseudo_logits2_overlap = torch.cat(pseudo_logits_list2, 0)  # [n,]
+            assert output_feat1.size(0) == output_feat2.size(0)
+            assert pseudo_label1_overlap.size(0) == pseudo_label2_overlap.size(0)
+            assert output_feat1.size(0) == pseudo_label1_overlap.size(0)
+
+            # concat across multi-gpus
+            b, c, h, w = output_ul1.size()
+            selected_num = self.selected_num
+            output_ul1_flatten = output_ul1.permute(0, 2, 3, 1).contiguous().view(b * h * w, c)
+            output_ul2_flatten = output_ul2.permute(0, 2, 3, 1).contiguous().view(b * h * w, c)
+            selected_idx1 = np.random.choice(range(b * h * w), selected_num, replace=False)
+            selected_idx2 = np.random.choice(range(b * h * w), selected_num, replace=False)
+            output_ul1_flatten_selected = output_ul1_flatten[selected_idx1]
+            output_ul2_flatten_selected = output_ul2_flatten[selected_idx2]
+            output_ul_flatten_selected = torch.cat([output_ul1_flatten_selected, output_ul2_flatten_selected],
+                                                   0)  # [2*kk, c]
+            output_ul_all = self.concat_all_gather(output_ul_flatten_selected)  # [2*N, c]
+
+            pseudo_label1_flatten_selected = pseudo_label1.view(-1)[selected_idx1]
+            pseudo_label2_flatten_selected = pseudo_label2.view(-1)[selected_idx2]
+            pseudo_label_flatten_selected = torch.cat([pseudo_label1_flatten_selected, pseudo_label2_flatten_selected],
+                                                      0)  # [2*kk]
+            pseudo_label_all = self.concat_all_gather(pseudo_label_flatten_selected)  # [2*N]
+
+            self.feature_bank.append(output_ul_all)
+            self.pseudo_label_bank.append(pseudo_label_all)
+            if self.step_count > self.step_save:
+                self.feature_bank = self.feature_bank[1:]
+                self.pseudo_label_bank = self.pseudo_label_bank[1:]
+            else:
+                self.step_count += 1
+            output_ul_all = torch.cat(self.feature_bank, 0)
+            pseudo_label_all = torch.cat(self.pseudo_label_bank, 0)
+
+            eps = 1e-7
+            pos1 = (output_feat1 * output_feat2.detach()).sum(-1,
+                                                              keepdim=True) / self.temp  # [n, 1] 共3573个重叠点 不同view的相同点为pos
+            pos2 = (output_feat1.detach() * output_feat2).sum(-1, keepdim=True) / self.temp  # [n, 1]
+
+            # compute loss1
+            b = 8000
+
+            def run1(pos, output_feat1, output_ul_idx, pseudo_label_idx, pseudo_label1_overlap, neg_max1):
+                # print("gpu: {}, i_1: {}".format(gpu, i))
+                mask1_idx = (pseudo_label_idx.unsqueeze(0) != pseudo_label1_overlap.unsqueeze(
+                    -1)).half()  # [n, b] 找到3573个重叠点与view中所有点不同label的点作为neg
+                neg1_idx = (output_feat1 @ output_ul_idx.T) / self.temp  # [n, b] #将自身点之外的所有点当做neg 求相似度
+                logits1_neg_idx = (torch.exp(neg1_idx - neg_max1) * mask1_idx).sum(-1)  # [n, ]
+                return logits1_neg_idx
+
+            def run1_0(pos, output_feat1, output_ul_idx, pseudo_label_idx, pseudo_label1_overlap):
+                # print("gpu: {}, i_1_0: {}".format(gpu, i))
+                mask1_idx = (pseudo_label_idx.unsqueeze(0) != pseudo_label1_overlap.unsqueeze(
+                    -1)).half()  # [n, b] 找到3573个重叠点与view中所有点不同label的点作为neg
+                neg1_idx = (output_feat1 @ output_ul_idx.T) / self.temp  # [n, b] #将自身点之外的所有点当做neg 求相似度
+                neg1_idx = torch.cat([pos, neg1_idx], 1)  # [n, 1+b] 将pos与neg串起来
+                mask1_idx = torch.cat([torch.ones(mask1_idx.size(0), 1).half().cuda(), mask1_idx], 1)  # [n, 1+b]
+                neg_max1 = torch.max(neg1_idx, 1, keepdim=True)[0]  # [n, 1]
+                logits1_neg_idx = (torch.exp(neg1_idx - neg_max1) * mask1_idx).sum(-1)  # [n, ]
+                return logits1_neg_idx, neg_max1
+
+            N = output_ul_all.size(0)
+            logits1_down = torch.zeros(pos1.size(0)).cuda()
+            for i in range((N - 1) // b + 1):
+                # print("gpu: {}, i: {}".format(gpu, i))
+                pseudo_label_idx = pseudo_label_all[i * b:(i + 1) * b]  # 每次8000个点
+                output_ul_idx = output_ul_all[i * b:(i + 1) * b]
+                if i == 0:
+                    logits1_neg_idx, neg_max1 = torch.utils.checkpoint.checkpoint(run1_0, pos1, output_feat1,
+                                                                                  output_ul_idx, pseudo_label_idx,
+                                                                                  pseudo_label1_overlap)
+                else:
+                    logits1_neg_idx = torch.utils.checkpoint.checkpoint(run1, pos1, output_feat1, output_ul_idx,
+                                                                        pseudo_label_idx, pseudo_label1_overlap,
+                                                                        neg_max1)
+                logits1_down += logits1_neg_idx
+
+            logits1 = torch.exp(pos1 - neg_max1).squeeze(-1) / (logits1_down + eps)
+
+            pos_mask_1 = ((pseudo_logits2_overlap > self.pos_thresh_value) & (
+                        pseudo_logits1_overlap < pseudo_logits2_overlap)).half()
+            loss1 = -torch.log(logits1 + eps)
+            loss1 = (loss1 * pos_mask_1).sum() / (pos_mask_1.sum().float() + 1e-12)
+
+            # compute loss2
+            def run2(pos, output_feat2, output_ul_idx, pseudo_label_idx, pseudo_label2_overlap, neg_max2):
+                # print("gpu: {}, i_2: {}".format(gpu, i))
+                mask2_idx = (pseudo_label_idx.unsqueeze(0) != pseudo_label2_overlap.unsqueeze(-1)).half()  # [n, b]
+                neg2_idx = (output_feat2 @ output_ul_idx.T) / self.temp  # [n, b]
+                logits2_neg_idx = (torch.exp(neg2_idx - neg_max2) * mask2_idx).sum(-1)  # [n, ]
+                return logits2_neg_idx
+
+            def run2_0(pos, output_feat2, output_ul_idx, pseudo_label_idx, pseudo_label2_overlap):
+                # print("gpu: {}, i_2_0: {}".format(gpu, i))
+                mask2_idx = (pseudo_label_idx.unsqueeze(0) != pseudo_label2_overlap.unsqueeze(-1)).half()  # [n, b]
+                neg2_idx = (output_feat2 @ output_ul_idx.T) / self.temp  # [n, b]
+                neg2_idx = torch.cat([pos, neg2_idx], 1)  # [n, 1+b]
+                mask2_idx = torch.cat([torch.ones(mask2_idx.size(0), 1).half().cuda(), mask2_idx], 1)  # [n, 1+b]
+                neg_max2 = torch.max(neg2_idx, 1, keepdim=True)[0]  # [n, 1]
+                logits2_neg_idx = (torch.exp(neg2_idx - neg_max2) * mask2_idx).sum(-1)  # [n, ]
+                return logits2_neg_idx, neg_max2
+
+            N = output_ul_all.size(0)
+            logits2_down = torch.zeros(pos2.size(0)).cuda()
+            for i in range((N - 1) // b + 1):
+                pseudo_label_idx = pseudo_label_all[i * b:(i + 1) * b]
+                output_ul_idx = output_ul_all[i * b:(i + 1) * b]
+                if i == 0:
+                    logits2_neg_idx, neg_max2 = torch.utils.checkpoint.checkpoint(run2_0, pos2, output_feat2,
+                                                                                  output_ul_idx, pseudo_label_idx,
+                                                                                  pseudo_label2_overlap)
+                else:
+                    logits2_neg_idx = torch.utils.checkpoint.checkpoint(run2, pos2, output_feat2, output_ul_idx,
+                                                                        pseudo_label_idx, pseudo_label2_overlap,
+                                                                        neg_max2)
+                logits2_down += logits2_neg_idx
+
+            logits2 = torch.exp(pos2 - neg_max2).squeeze(-1) / (logits2_down + eps)
+
+            pos_mask_2 = ((pseudo_logits1_overlap > self.pos_thresh_value) & (
+                        pseudo_logits2_overlap < pseudo_logits1_overlap)).half()
+
+            loss2 = -torch.log(logits2 + eps)
+            loss2 = (loss2 * pos_mask_2).sum() / (pos_mask_2.sum().float() + 1e-12)
+
+            loss_unsup = self.weight_unsup * (loss1 + loss2)
+            # curr_losses['loss1'] = loss1
+            # curr_losses['loss2'] = loss2
+            curr_losses['loss_unsup'] = loss_unsup
+            total_loss = total_loss + loss_unsup
+            # if epoch < self.epoch_start_inter:
+            #     return total_loss, curr_losses, outputs
+            # return total_loss, curr_losses, outputs
+            ##################### inter-video loss #############################################
+
+            output_ul1_up = self.project(enc_ul1_up)
+            output_ul1_up = F.normalize(output_ul1_up, 2, 1)
+
+            output_ul2_up = self.project(enc_ul2_up)
+            output_ul2_up = F.normalize(output_ul2_up, 2, 1)
+
+            # compute pseudo label
+            with torch.no_grad():
+                logits1_up = self.classifier(enc_ul1_up)  # [batch_size, num_classes, h, w]
+                logits2_up = self.classifier(enc_ul2_up)
+                pseudo_logits1_up = F.softmax(logits1_up, 1).max(1)[0].detach()  # [batch_size, h, w]
+                pseudo_logits2_up = F.softmax(logits2_up, 1).max(1)[0].detach()
+                pseudo_label1_up = logits1_up.max(1)[1].detach()  # [batch_size, h, w]
+                pseudo_label2_up = logits2_up.max(1)[1].detach()
+
+            enc_feature_list1_up = []
+            enc_feature_list2_up = []
+            pseudo_logits_list1_up = []
+            pseudo_logits_list2_up = []
+            pseudo_label_list1_up = []
+            pseudo_label_list2_up = []
+            for idx in range(x_ul1.size(0)):
+                enc_ul1_idx_up = output_ul1_up[idx]
+                enc_ul2_idx_up = output_ul2_up[idx]
+                pseudo_label1_idx_up = pseudo_label1_up[idx]
+                pseudo_label2_idx_up = pseudo_label2_up[idx]
+                pseudo_logits_1_idx_up = pseudo_logits1_up[idx]
+                pseudo_logits_2_idx_up = pseudo_logits2_up[idx]
+                if flip[0][idx] == True:
+                    enc_ul1_idx_up = torch.flip(enc_ul1_idx_up, dims=(2,))
+                    pseudo_label1_idx_up = torch.flip(pseudo_label1_idx_up, dims=(1,))
+                    pseudo_logits_1_idx_up = torch.flip(pseudo_logits_1_idx_up, dims=(1,))
+                if flip[1][idx] == True:
+                    enc_ul2_idx_up = torch.flip(enc_ul2_idx_up, dims=(2,))
+                    pseudo_label2_idx_up = torch.flip(pseudo_label2_idx_up, dims=(1,))
+                    pseudo_logits_2_idx_up = torch.flip(pseudo_logits_2_idx_up, dims=(1,))
+                # 因为原图320，特征缩小了8倍，80×80，所以对应的原图空间特征也要/8
+                ul1_t, br1_t, ul2_t, br2_t = torch.stack(ul1, 0), torch.stack(br1, 0), torch.stack(ul2, 0), torch.stack(
+                    br2, 0)
+                ul1_f_up, br1_f_up, ul2_f_up, br2_f_up = ul1_t // 4, br1_t // 4, ul2_t // 4, br2_t // 4
+                enc_feature_list1_up.append(
+                    enc_ul1_idx_up[:, ul1_f_up[0, idx]:br1_f_up[0, idx], ul1_f_up[1, idx]:br1_f_up[1, idx]].permute(1,
+                                                                                                                    2,
+                                                                                                                    0).contiguous().view(
+                        -1, output_ul1_up.size(1)))
+                enc_feature_list2_up.append(
+                    enc_ul2_idx_up[:, ul2_f_up[0, idx]:br2_f_up[0, idx], ul2_f_up[1, idx]:br2_f_up[1, idx]].permute(1,
+                                                                                                                    2,
+                                                                                                                    0).contiguous().view(
+                        -1, output_ul2_up.size(1)))
+                pseudo_label_list1_up.append(pseudo_label1_idx_up[ul1_f_up[0, idx]:br1_f_up[0, idx],
+                                             ul1_f_up[1, idx]:br1_f_up[1, idx]].contiguous().view(-1))
+                pseudo_label_list2_up.append(pseudo_label2_idx_up[ul2_f_up[0, idx]:br2_f_up[0, idx],
+                                             ul2_f_up[1, idx]:br2_f_up[1, idx]].contiguous().view(-1))
+                pseudo_logits_list1_up.append(pseudo_logits_1_idx_up[ul1_f_up[0, idx]:br1_f_up[0, idx],
+                                              ul1_f_up[1, idx]:br1_f_up[1, idx]].contiguous().view(-1))
+                pseudo_logits_list2_up.append(pseudo_logits_2_idx_up[ul2_f_up[0, idx]:br2_f_up[0, idx],
+                                              ul2_f_up[1, idx]:br2_f_up[1, idx]].contiguous().view(-1))
+
+            feats_, labels_ = self._anchor_sampling(enc_l, pred_key, target_l, output_ul1_up, output_ul2_up,
+                                                    pseudo_logits1_up, pseudo_logits2_up, pseudo_label1_up,
+                                                    pseudo_label2_up,
+                                                    enc_feature_list1_up, enc_feature_list2_up, pseudo_label_list1_up,
+                                                    pseudo_label_list2_up,
+                                                    pseudo_logits_list1_up, pseudo_logits_list2_up, ul1_f_up, ul2_f_up,
+                                                    br1_f_up, br2_f_up, epoch)
+            feats_norm = F.normalize(feats_, dim=-1)
+            # loss
+            loss_inter = self.weight_inter * self._contrastive(feats_norm, labels_.squeeze(0), queue=self.segment_queue)
+            curr_losses['loss_inter'] = loss_inter
+            total_loss = total_loss + loss_inter
+            # if epoch < self.epoch_start_inter:
             return total_loss, curr_losses, outputs
 
         else:
@@ -575,7 +576,7 @@ class VCL(BaseModel):
         contrast_count = 1
 
         mask = torch.eq(y_anchor,
-                        y_contrast.T).float()  # torch.eq对两个tensor逐元素比较 个位置的0 1 #把一横一竖的tensor比较得到N*N的tensor，即标签一致的位置为1 22*19000
+                        y_contrast.T).half()  # torch.eq对两个tensor逐元素比较 个位置的0 1 #把一横一竖的tensor比较得到N*N的tensor，即标签一致的位置为1 22*19000
         mask = mask.repeat(anchor_count,
                            contrast_count).cuda()  # 将22*19000扩展到（22*49）*19000，所有anchor和sample的对应关系，所有正样本，即所有标签一致的对
         anchor_dot_contrast = torch.div(torch.matmul(anchor_feature, contrast_feature.T),
@@ -663,7 +664,7 @@ class VCL(BaseModel):
             class_num = preds.shape[1]
 
             # labels = labels[:, ::self.network_stride, ::self.network_stride]
-            labels_down = F.interpolate(labels.float().unsqueeze(1),
+            labels_down = F.interpolate(labels.half().unsqueeze(1),
                                         size=(keys.shape[2], keys.shape[3]),
                                         mode='nearest').squeeze(1)
             probs = torch.softmax(preds, dim=1)
@@ -679,7 +680,7 @@ class VCL(BaseModel):
                 for lb in this_label_ids:
                     # idxs = (this_label == lb).nonzero()
                     lb = lb.long()
-                    idxs_easy = ((this_label == lb).float() * (this_preds == lb).float()).nonzero().squeeze(-1)
+                    idxs_easy = ((this_label == lb).half() * (this_preds == lb).half()).nonzero().squeeze(-1)
                     new_feat = this_feat[idxs_easy, :]
                     # new_weight = torch.softmax(torch.cat([weight_easy, weight_hard]), dim=0)
                     feat = torch.mean(new_feat, dim=0)
@@ -719,7 +720,7 @@ class VCL(BaseModel):
         #     )
 
         # supervised anchor sample
-        target_l_down = F.interpolate(target_l.float().unsqueeze(1), size=enc_l.size()[2:], mode='nearest').squeeze(
+        target_l_down = F.interpolate(target_l.half().unsqueeze(1), size=enc_l.size()[2:], mode='nearest').squeeze(
             1)
         for idx in range(b):
             this_feat_l = enc_l[idx].contiguous().view(enc_l.shape[1], -1).permute(1, 0)
@@ -794,8 +795,8 @@ class VCL(BaseModel):
                 this_classes = torch.unique(torch.cat([hard_ul_anchor_lb, random_ul_anchor_lb]))
                 this_classes = [x for x in this_classes if x != self.ignore_index]
                 # this_classes = [x for x in this_classes if self.segment_queue_ptr[x] == self.queue_len]
-                this_classes = [x for x in this_classes if (random_ul_anchor_lb == x).float().sum() + (
-                        hard_ul_anchor_lb == x).float().sum() > n_anchor]
+                this_classes = [x for x in this_classes if (random_ul_anchor_lb == x).half().sum() + (
+                        hard_ul_anchor_lb == x).half().sum() > n_anchor]
                 for cls_id in this_classes:
                     hard_indices = (hard_ul_anchor_lb == cls_id).nonzero().squeeze(-1)
                     random_indices = (random_ul_anchor_lb == cls_id).nonzero().squeeze(-1)

@@ -14,7 +14,7 @@ import random
 import cv2
 import copy
 from augmentations import get_composed_augmentations
-# from memory_profiler import profile
+from memory_profiler import profile
 
 class RandomGaussianBlur(object):
     def __init__(self, radius=5):
@@ -64,7 +64,6 @@ class ThermalVidDataset(BaseDataSet):
             file_list = os.path.join(prefix, f"{self.split}" + ".txt")
         elif self.split == "test":
             file_list = os.path.join(prefix, f"{self.split}" + ".txt")
-            # file_list = os.path.join(prefix, "1374_train_supervised.txt")
         elif self.split == "train_supervised":
             file_list = os.path.join(prefix, f"{self.n_labeled_examples}_{self.split}" + ".txt")
         elif self.split == "train_unsupervised":
@@ -77,21 +76,29 @@ class ThermalVidDataset(BaseDataSet):
             self.files, self.labels = list(file_list), None
         else:
             self.files, self.labels = list(zip(*file_list))
+        self.image_loaded = np.empty([len(file_list),self.base_size[0],self.base_size[1],3], dtype=float)
+        self.label_loaded = np.empty([len(file_list), self.base_size[0], self.base_size[1]], dtype=int)
+        for idx in len(self.files):
+            img_path = os.path.join(self.root, self.files[idx][:][1:])
+            self.image_loaded[idx] = np.asarray(Image.open(img_path), dtype=np.float32)
+            label_path = os.path.join(self.root, self.labels[idx][:][1:])
+            label = np.asarray(Image.open(label_path), dtype=np.uint8)
+            self.label_loaded[idx] = self.encode_segmap(label)
 
     def _load_data(self, index):
-        image_path = os.path.join(self.root, self.files[index][:][1:])
-        image = np.asarray(Image.open(image_path), dtype=np.float32)
-        image_id = self.files[index].split("/")[-1].split(".")[0]
-        if self.use_weak_lables:
-            label_path = os.path.join(self.weak_labels_output, image_id + ".png")
-        else:
-            label_path = os.path.join(self.root, self.labels[index][:][1:])
-        if label_path is not None:
-            label = np.asarray(Image.open(label_path), dtype=np.int32)
-            label = self.encode_segmap(np.array(label, dtype=np.uint8))
-            return image, label
-        else:
-            return image, None
+        # image_path = os.path.join(self.root, self.files[index][:][1:])
+        # image = np.asarray(Image.open(image_path), dtype=np.float32)
+        # # image_id = self.files[index].split("/")[-1].split(".")[0]
+        # if self.use_weak_lables:
+        #     label_path = os.path.join(self.weak_labels_output, image_id + ".png")
+        # else:
+        #     label_path = os.path.join(self.root, self.labels[index][:][1:])
+        # if label_path is not None:
+        #     label = np.asarray(Image.open(label_path), dtype=np.int32)
+        #     label = self.encode_segmap(np.array(label, dtype=np.uint8))
+        return self.image_loaded[index], self.label_loaded[index] #, image_id
+        # else:
+        #     return self.image_loaded[index], None#, image_id
 
     def decode_segmap(self, temp):
         r = temp.copy()
@@ -197,11 +204,20 @@ class PairThermalVidDataset(BaseDataSet):
         else:
             file_list = [line.rstrip().split('	') for line in tuple(open(file_list, "r"))]
             self.files, self.labels = list(zip(*file_list))
+        # file_list = [line.rstrip() for line in tuple(open(file_list, "r"))]
+        self.image_loaded = np.empty([len(file_list),self.base_size[0],self.base_size[1],3], dtype=float)
+        # self.label_loaded = np.empty([len(file_list), self.base_size[0], self.base_size[1]], dtype=int)
+        for idx in len(file_list):
+            img_path = os.path.join(self.root, self.files[idx][1:])
+            self.image_loaded[idx] = np.asarray(Image.open(img_path), dtype=np.float32)
+            # label_path = os.path.join(self.root, self.labels[idx][1][1:])
+            # label = np.asarray(Image.open(label_path), dtype=np.uint8)
+            # self.label_loaded[idx] = self.encode_segmap(label)
 
     def _load_data(self, index):
-        image_path = os.path.join(self.root, self.files[index][1:])
-        image = np.asarray(Image.open(image_path), dtype=np.float32)
-        image_id = self.files[index].split("/")[-1].split(".")[0]
+        # image_path = os.path.join(self.root, self.files[index][:][1:])
+        # image = np.asarray(Image.open(image_path), dtype=np.float32)
+        # image_id = self.files[index].split("/")[-1].split(".")[0]
         # if self.use_weak_lables:
         #     label_path = os.path.join(self.weak_labels_output, image_id + ".png")
         # else:
@@ -210,20 +226,20 @@ class PairThermalVidDataset(BaseDataSet):
         #     label = np.asarray(Image.open(label_path), dtype=np.int32)
         #     label = self.encode_segmap(np.array(label, dtype=np.uint8))
         #     return image, label, image_id
-        return image, None, image_id
+        return self.image_loaded[index], None#, image_id
 
     # @profile(precision=4, stream=open('/home/zhengyu/ours_video/memory/memory_pair_getitem_cycle.log', 'w+'))
     def __getitem__(self, index):
 
         image_path = os.path.join(self.root, self.files[index][:][1:])
 
-        image = np.asarray(Image.open(image_path))
-        if self.use_weak_lables:
-            label_path = os.path.join(self.weak_labels_output, image_id + ".png")
-        elif self.labels is not None:
-            label_path = os.path.join(self.root, self.labels[index][:][1:])
-        else:
-            label_path = None
+        image = self.image_loaded[index]#np.asarray(Image.open(image_path))
+        # if self.use_weak_lables:
+        #     label_path = os.path.join(self.weak_labels_output, image_id + ".png")
+        # elif self.labels is not None:
+        #     label_path = os.path.join(self.root, self.labels[index][:][1:])
+        # else:
+        label_path = None
 
         h, w, _ = image.shape
 
@@ -417,7 +433,7 @@ class ClipThermalVidDataset(BaseDataSet):
         # self.augmentations1 = get_composed_augmentations(clip1_augmentations)
         # self.augmentations2 = get_composed_augmentations(clip2_augmentations)
     def _set_files(self):
-        prefix = "dataloaders/thermalvid_splits{}".format(self.datalist)
+        prefix = "dataloaders/thermalour_splits{}".format(self.datalist)
 
         if self.split == "val":
             file_list = os.path.join(prefix, f"{self.split}" + ".txt")
@@ -439,24 +455,54 @@ class ClipThermalVidDataset(BaseDataSet):
             file_list = [line.rstrip().split('	') for line in tuple(open(file_list, "r"))]
             self.files, self.labels = list(zip(*file_list))
 
+        # file_list = [line.rstrip() for line in tuple(open(file_list, "r"))]
+        self.image_loaded = np.empty([len(file_list), self.clip_size, self.base_size[0],self.base_size[1],3], dtype=float)
+        # self.label_loaded = np.empty([len(file_list), self.base_size[0], self.base_size[1]], dtype=int)
+        for idx in len(file_list):
+            img_path = os.path.join(self.root, self.files[idx][:][1:])
+            vid_info = img_path.split('/')[-1].split('.')[0].split('_')
+            city, seq, cur_frame = vid_info[0], vid_info[1], vid_info[2]
+            self.image_loaded[idx] = np.asarray(Image.open(img_path), dtype=np.float32)
+            for fid in range(self.clip_size):
+                neighbor_img_id = img_id + fid + 1
+            self.image_loaded[idx] = np.asarray(Image.open(img_path), dtype=np.float32)
+            # label_path = os.path.join(self.root, self.labels[idx][1][1:])
+            # label = np.asarray(Image.open(label_path), dtype=np.uint8)
+            # self.label_loaded[idx] = self.encode_segmap(label)
+
+        clip_size = self.clip_size
+        # self.interval=2
+        img_id = int(cur_frame)
+        nei_img = []
+        nei_img.append(image)
+        crop1_start, crop2_start, scale, overlap1_ul, overlap1_br, overlap2_ul, overlap2_br = self.get_crops(image)
+        for fid in range(clip_size):
+            neighbor_img_id = img_id + fid + 1
+            neighbor_img_path = os.path.join(self.root, os.path.split(self.files[index][:][1:])[0],
+                                             ("%s_%s_%06d.bmp" % (city, seq, neighbor_img_id)))
+            neighbor_img = Image.open(neighbor_img_path)
+            neighbor_img = np.array(neighbor_img, dtype=np.uint8)
+            nei_img.append(neighbor_img)
+
+
     def _load_data(self, index):
-        image_path = os.path.join(self.root, self.files[index][1:])
-        image = np.asarray(Image.open(image_path), dtype=np.float32)
-        image_id = self.files[index].split("/")[-1].split(".")[0]
-        if self.use_weak_lables:
-            label_path = os.path.join(self.weak_labels_output, image_id + ".png")
-        else:
-            label_path = os.path.join(self.root, self.labels[index][:][1:])
-        if label_path is not None:
-            label = np.asarray(Image.open(label_path), dtype=np.int32)
-            label = self.encode_segmap(np.array(label, dtype=np.uint8))
-            return image, label, image_id
-        return image, None, image_id
+        # image_path = os.path.join(self.root, self.files[index][1:])
+        # image = np.asarray(Image.open(image_path), dtype=np.float32)
+        # image_id = self.files[index].split("/")[-1].split(".")[0]
+        # if self.use_weak_lables:
+        #     label_path = os.path.join(self.weak_labels_output, image_id + ".png")
+        # else:
+        #     label_path = os.path.join(self.root, self.labels[index][:][1:])
+        # if label_path is not None:
+        #     label = np.asarray(Image.open(label_path), dtype=np.int32)
+        #     label = self.encode_segmap(np.array(label, dtype=np.uint8))
+        #     return image, label, image_id
+        return self.label_loaded[index], None#, image_id
 
     # @profile(precision=4, stream=open('/home/zhengyu/ours_video/memory/memory_clip_getitem.log', 'w+'))
     def __getitem__(self, index):
 
-        image_path = os.path.join(self.root, self.files[index][:][1:])
+        image_path = self.label_loaded[index]#os.path.join(self.root, self.files[index][:][1:])
         vid_info = image_path.split('/')[-1].split('.')[0].split('_')
         city, seq, cur_frame = vid_info[0], vid_info[1], vid_info[2]
         image = np.asarray(Image.open(image_path))

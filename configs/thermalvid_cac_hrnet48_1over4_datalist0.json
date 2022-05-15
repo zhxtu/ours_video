@@ -1,6 +1,6 @@
 {
     "name": "CAC",
-    "experim_name": "thermalvid_cac_deeplabv3+_resnet50_1over4_datalist0",
+    "experim_name": "thermalvid_cac_hrnet48_1over4_datalist0",
     "dataset": "thermalvid",
     "data_dir": "/hdd2/zy/Dataset/ThermalData",
     "datalist": 0,
@@ -28,8 +28,8 @@
         "layers": 50,
         "downsample": true,
         "proj_final_dim": 256,
-        "out_dim": 256,
-        "backbone": "deeplab_v3+",
+        "out_dim": 720,
+        "backbone": "hrnet48",
         "pos_thresh_value": 0.75,
         "weight_unsup": 0.1,
         "weight_cycle": 0.1,
@@ -55,7 +55,7 @@
     },
 
     "train_supervised": {
-        "batch_size": 8,
+        "batch_size": 48,
         "crop_size": 320,
         "shuffle": true,
         "base_size": 720,
@@ -65,12 +65,12 @@
         "rotate": false,
         "blur": false,
         "split": "train_supervised",
-        "num_workers": 4,
+        "num_workers": 8,
         "jitter": true
     },
 
     "train_unsupervised": {
-       "batch_size": 8,
+        "batch_size": 8,
         "crop_size": 320,
         "shuffle": true,
         "base_size": 720,
@@ -80,13 +80,13 @@
         "rotate": false,
         "blur": false,
         "split": "train_unsupervised",
-        "num_workers": 4,
+        "num_workers": 8,
         "iou_bound": [0.1, 1.0],
         "stride": 8
     },
 
     "train_vid": {
-        "batch_size": 8,
+        "batch_size": 4,
         "crop_size": 320,
         "shuffle": true,
         "base_size": 720,
@@ -97,7 +97,7 @@
         "rotate": 5,
         "blur": false,
         "split": "train_vid",
-        "num_workers": 4,
+        "num_workers": 8,
         "jitter": [0.5,0.5,0.5],
         "iou_bound": [0.1, 1.0],
         "stride": 8

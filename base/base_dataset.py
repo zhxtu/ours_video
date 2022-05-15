@@ -8,7 +8,7 @@ from PIL import Image
 from torchvision import transforms
 from scipy import ndimage
 from math import ceil
-from memory_profiler import profile
+# from memory_profiler import profile
 
 class BaseDataSet(Dataset):
     def __init__(self, data_dir, split, mean, std, ignore_index, base_size=None, augment=True, val=False,
@@ -183,7 +183,7 @@ class BaseDataSet(Dataset):
     # @profile(precision=4, stream=open('/home/zhengyu/ours_video/memory/memory_wocycle.log', 'w+'))
     def __getitem__(self, index):
 
-        image, label, image_id =  self._load_data(index)
+        image, label =  self._load_data(index)
         if self.val:
             image, label = self._val_augmentation(image, label)
         elif self.augment:
@@ -192,7 +192,7 @@ class BaseDataSet(Dataset):
         if label is not None:
             label = torch.from_numpy(np.array(label, dtype=np.int32)).long()
 
-        return image, label
+        return image, label #, index
 
     def __repr__(self):
         fmt_str = "Dataset: " + self.__class__.__name__ + "\n"

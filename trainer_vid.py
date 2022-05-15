@@ -13,7 +13,7 @@ from tqdm import tqdm
 from PIL import Image
 from utils.helpers import DeNormalize
 import torch.distributed as dist
-from memory_profiler import profile
+# from memory_profiler import profile
 from models.feature_memory import *
 
 class TrainerVid(BaseTrainer):
@@ -73,7 +73,8 @@ class TrainerVid(BaseTrainer):
         self._reset_metrics()
 
         for batch_idx in tbar:#range(20):
-
+            self.optimizer.zero_grad()
+            # with torch.cuda.amp.autocast():
             if self.mode == 'supervised': ##mem
                 (input_l, target_l),  input_ul, clip_f, clip_b, = next(dataloader), None, None, None
 
@@ -93,21 +94,23 @@ class TrainerVid(BaseTrainer):
                 clip_f, clip_b = clip_f.cuda(non_blocking=True), clip_b.cuda(non_blocking=True)
             input_l, target_l = input_l.cuda(non_blocking=True), target_l.cuda(non_blocking=True)
 
-            self.optimizer.zero_grad()
-
             if self.mode == 'supervised':
                 total_loss, cur_losses, outputs = self.model(x_l=input_l, target_l=target_l,
                                                             curr_iter=batch_idx, epoch=epoch-1)
             else:
                 kargs = {'gpu': self.gpu, 'ul1': ul1, 'br1': br1, 'ul2': ul2, 'br2': br2, 'flip': flip, 'theta': theta}
                 total_loss, cur_losses, outputs = self.model(x_l=input_l, target_l=target_l, x_ul=input_ul, c_f=clip_f, c_b=clip_b,
-                                                            curr_iter=batch_idx, epoch=epoch-1, **kargs)
+                                                                curr_iter=batch_idx, epoch=epoch-1, **kargs)
+
+            # self.scaler.scale(total_loss).backward()
+            # self.scaler.step(self.optimizer)
+            # self.scaler.update()
 
             total_loss.backward()
             self.optimizer.step()
 
             if self.gpu == 0:
-                if batch_idx % 10 == 0:
+                if batch_idx % 100 == 0:
                     self.logger.info("epoch: {} train_loss: {}".format(epoch, total_loss))
 
             if batch_idx == 0:
